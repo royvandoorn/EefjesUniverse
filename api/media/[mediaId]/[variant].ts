@@ -1,14 +1,15 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin } from '../../../server/media/supabase';
-import { methodNotAllowed, sendError } from '../../../server/media/errors';
-import { DISPLAY_VARIANT, MEDIA_BUCKET } from '../../../server/media/constants';
+import { boardId, requireSession, secureHandler } from '../../../server/auth/security.ts';
+import { supabaseAdmin } from '../../../server/media/supabase.ts';
+import { methodNotAllowed, sendError } from '../../../server/media/errors.ts';
+import { DISPLAY_VARIANT, MEDIA_BUCKET } from '../../../server/media/constants.ts';
 
 /**
  * GET /api/media/:mediaId/:variant
  * Streams media bytes from the private bucket. Auth (session + role)
  * lands in phase 2; the bucket itself has no public policies.
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default secureHandler(async (req, res) => {
+  if (!await requireSession(req, res)) return;
   if (req.method !== 'GET') {
     return methodNotAllowed(res, 'GET');
   }
@@ -25,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: asset, error: lookupError } = await supabase
     .from('media_assets')
     .select('storage_key, mime_type, status')
+    .eq('board_id', boardId())
     .eq('id', mediaId)
     .eq('status', 'ready')
     .single();
@@ -43,4 +45,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.send(Buffer.from(await file.arrayBuffer()));
-}
+});

@@ -1,0 +1,16 @@
+# Project workflow
+
+- Node.js 22+ is required. On Windows, Node may be installed in `C:/Program Files/nodejs` without being on the terminal PATH.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build`.
+- `npm test` includes standalone API security tests (mocked Supabase transport, real Argon2) and embedded PostgreSQL migration tests via PGlite. These require no credentials and do not touch a hosted database. Storage tests model Supabase's storage tables and roles; they do not exercise its HTTP storage service.
+- Run the full application with `npm run dev:vercel`; this explicitly loads `.env.local` before launching the pinned Vercel CLI. Bare `vercel dev` may not pass local secrets to API handlers. Vite alone does not serve API routes. The root tsconfig must also enable `allowImportingTsExtensions` for Vercel's independent API compiler.
+- Backend relative imports in `api/` and `server/` must include `.ts` extensions: native Node ESM does not resolve extensionless paths, even when Vitest passes. TypeScript's `allowImportingTsExtensions` is enabled.
+- React Fast Refresh is disabled in local Vite development because its inline preamble is blocked by the application's CSP. Keep production CSP intact.
+- Apply migrations in filename order to an isolated Supabase environment before running the application. Never apply migrations to production without explicit approval.
+- Server configuration is listed in `.env.example`. Set `APP_ORIGIN` to the exact application origin, without a trailing slash, and `THROTTLE_SECRET` to a securely generated random secret of at least 32 bytes. Never use `VITE_*` for backend credentials.
+- For local HTTP only, set `DEV_INSECURE_COOKIE=true` and use the exact local origin in `APP_ORIGIN`. This uses a separate cookie name and is ignored in production. Production uses HTTPS and the `__Host-` Secure cookie.
+- Password administration: create `.env.local` privately, then run `npm run password -- viewer` and `npm run password -- editor`. Both roles must be configured before login is available. Password entry and confirmation are hidden, with a 12-character minimum. Rotation revokes only that role's sessions. Never pass passwords as arguments.
+- Login rate limiting conservatively counts all attempts (including successes), allowing five per source address per fifteen-minute window. Vercel deployments use the platform-overwritten `x-vercel-forwarded-for`; local development (including `VERCEL_ENV=development` with `VERCEL=1`) uses the socket address. Do not trust arbitrary forwarded headers on other hosts.
+- Every protected API route must use `requireSession` or `requireEditor` from `server/auth/security.ts`, plus `secureHandler`. Session-bearing mutations require exact Origin, JSON, and a session-bound `X-CSRF-Token`. Always scope resource lookups to the server-configured board.
+- Before production release, independently verify login/logout, role denial, Secure cookies and raw bucket access against the actual hosted Supabase/Vercel services. Embedded database and mocked HTTP tests do not replace deployment checks.
+- Dependency audit on 2026-11-03 reported existing high-severity production advisories in Sharp 0.34.x and Zod 3.x; remediation requires separately validated upgrades. Do not bypass dependency security controls.

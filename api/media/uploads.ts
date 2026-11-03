@@ -1,11 +1,11 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { boardId, requireEditor, secureHandler } from '../../server/auth/security.ts';
 import { randomUUID } from 'node:crypto';
-import { supabaseAdmin } from '../../server/media/supabase';
-import { methodNotAllowed, sendError } from '../../server/media/errors';
-import { uploadRequestSchema } from '../../server/media/validation';
-import { STAGING_BUCKET } from '../../server/media/constants';
+import { supabaseAdmin } from '../../server/media/supabase.ts';
+import { methodNotAllowed, sendError } from '../../server/media/errors.ts';
+import { uploadRequestSchema } from '../../server/media/validation.ts';
+import { STAGING_BUCKET } from '../../server/media/constants.ts';
 
-const SEED_BOARD_ID = process.env.BOARD_ID ?? '00000000-0000-0000-0000-000000000001';
+const SEED_BOARD_ID = boardId();
 
 /**
  * POST /api/media/uploads
@@ -13,7 +13,8 @@ const SEED_BOARD_ID = process.env.BOARD_ID ?? '00000000-0000-0000-0000-000000000
  * Returns a short-lived signed upload URL for the private staging bucket.
  * NOTE: editor authorization lands in phase 2; this is the phase-1 prototype.
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default secureHandler(async (req, res) => {
+  if (!await requireEditor(req, res)) return;
   if (req.method !== 'POST') {
     return methodNotAllowed(res, 'POST');
   }
@@ -52,4 +53,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     signedUrl: signed.signedUrl,
     token: signed.token,
   });
-}
+});

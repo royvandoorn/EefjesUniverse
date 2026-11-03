@@ -10,7 +10,7 @@ type CompleteResult = {
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 
-export function UploadPrototype() {
+export function UploadPrototype({ csrfToken }: { csrfToken: string }) {
   const [status, setStatus] = useState<string>('idle');
   const [result, setResult] = useState<CompleteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function UploadPrototype() {
     setStatus('requesting upload ticket…');
     const ticketRes = await fetch('/api/media/uploads', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
       body: JSON.stringify({ byteSize: file.size, mimeType: file.type }),
     });
     if (!ticketRes.ok) {
@@ -53,6 +53,8 @@ export function UploadPrototype() {
     setStatus('processing (sharp)…');
     const completeRes = await fetch(`/api/media/uploads/${ticket.uploadId}/complete`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: '{}',
     });
     const body = await completeRes.json().catch(() => null);
     if (!completeRes.ok) {

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:vercel": "vercel dev",
+    "password": "node --env-file=.env.local scripts/password.mjs",
+    "dev:vercel": "node --env-file=.env.local node_modules/vercel/dist/vc.js dev",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -14,12 +15,14 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
+    "argon2": "^0.41.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sharp": "^0.34.2",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
@@ -29,7 +32,7 @@
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.8.3",
-    "vercel": "^41.0.0",
+    "vercel": "65.2.0",
     "vite": "^6.3.5",
     "vitest": "^3.1.0"
   },

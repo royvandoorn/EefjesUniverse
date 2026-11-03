@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { DISPLAY_QUALITY, MAX_DISPLAY_DIMENSION } from './validation';
+import { DISPLAY_QUALITY, MAX_DISPLAY_DIMENSION } from './validation.ts';
 
 export type ProcessedImage = {
   data: Buffer;

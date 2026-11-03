@@ -1,8 +1,8 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin } from '../../../../server/media/supabase';
-import { methodNotAllowed, sendError } from '../../../../server/media/errors';
-import { processUploadedImage } from '../../../../server/media/process';
-import { DISPLAY_VARIANT, MEDIA_BUCKET, STAGING_BUCKET } from '../../../../server/media/constants';
+import { boardId, requireEditor, secureHandler } from '../../../../server/auth/security.ts';
+import { supabaseAdmin } from '../../../../server/media/supabase.ts';
+import { methodNotAllowed, sendError } from '../../../../server/media/errors.ts';
+import { processUploadedImage } from '../../../../server/media/process.ts';
+import { DISPLAY_VARIANT, MEDIA_BUCKET, STAGING_BUCKET } from '../../../../server/media/constants.ts';
 
 /**
  * POST /api/media/uploads/:uploadId/complete
@@ -11,7 +11,8 @@ import { DISPLAY_VARIANT, MEDIA_BUCKET, STAGING_BUCKET } from '../../../../serve
  * media_assets row ready. Staging bytes are removed afterwards.
  * NOTE: editor authorization lands in phase 2; this is the phase-1 prototype.
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default secureHandler(async (req, res) => {
+  if (!await requireEditor(req, res)) return;
   if (req.method !== 'POST') {
     return methodNotAllowed(res, 'POST');
   }
@@ -26,6 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from('media_assets')
     .select('id, board_id, staging_key, status')
     .eq('id', uploadId)
+    .eq('board_id', boardId())
     .single();
 
   if (lookupError || !asset) {
@@ -84,4 +86,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     byteSize: processed.byteSize,
     mimeType: processed.mimeType,
   });
-}
+});
