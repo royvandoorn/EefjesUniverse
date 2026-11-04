@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { UploadPrototype } from '../features/media/UploadPrototype';
+import { BoardView } from '../features/board/BoardView';
 
 type Session = { role: 'viewer' | 'editor'; expiresAt: string; csrfToken: string };
 
@@ -45,14 +46,24 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  if (!loading && session) {
+    return (
+      <>
+        <BoardView session={session} onLogout={() => void logout()} onSession={setSession} />
+        {session.role === 'editor' && (
+          <details className="fixed right-2 bottom-2 w-72 rounded-lg border border-neutral-300 bg-white p-2 text-xs shadow-lg">
+            <summary className="cursor-pointer">Upload prototype (phase 1)</summary>
+            <UploadPrototype csrfToken={session.csrfToken} />
+          </details>
+        )}
+      </>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-xl p-6 font-sans">
       <h1 className="mb-2 text-2xl font-bold">Eefje's universum</h1>
-      {loading ? <p>Checking session…</p> : session ? <>
-        <p className="mb-4">Signed in as {session.role}.</p>
-        <button onClick={() => void logout()} disabled={busy}>Log out</button>
-        {session.role === 'editor' ? <UploadPrototype csrfToken={session.csrfToken} /> : <p>Read-only access is ready. The board will be added in the next phase.</p>}
-      </> : <form onSubmit={login} className="flex flex-col gap-3">
+      {loading ? <p>Checking session…</p> : <form onSubmit={login} className="flex flex-col gap-3">
         <label htmlFor="password">Password</label>
         <input id="password" type="password" autoComplete="current-password" required maxLength={1024}
           value={password} onChange={event => setPassword(event.target.value)} className="rounded border p-2" />

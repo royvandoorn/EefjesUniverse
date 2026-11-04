@@ -1,7 +1,7 @@
 # Eefje's universum — Technical Design
 
 **Version:** 1.0  
-**Status:** Proposed design for review; not implemented  
+**Status:** In implementation — phases 1–3 (foundation, security, canvas basics) built and verified, including real-phone testing  
 **Date:** 3 November 2026  
 **Source:** [Product Requirements Document v1.0](./eefjes_universum_requirements.md)
 
