@@ -603,6 +603,24 @@ things to remember.
 
 ------------------------------------------------------------------------
 
+### 7.5 Standalone text and section headings (phase 5 addition)
+
+Agreed scope addition on 5 November 2026: provide a separate text-only
+board element, not a sticky note with a transparent background. This is
+planned for phase 5 and is not a missing phase 4 deliverable.
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| TEXT-01 | Editors can create, edit and delete standalone plain-text elements directly on the board, without a note background, border or frame. | Must (phase 5) |
+| TEXT-02 | Text elements can be moved and resized, with font-size, colour and alignment controls. Changes persist through the existing autosave flow. | Must (phase 5) |
+| TEXT-03 | Text elements can label sections containing lists, notes and pictures. These headings do not automatically group, contain or move nearby cards. | Must (phase 5) |
+| TEXT-04 | Editing and positioning controls are editor-only. Viewers see only the styled text, with no editing chrome. Text remains readable on phone and desktop. | Must (phase 5) |
+| TEXT-05 | Add one editable, movable text element reading “Eefje's universum” near the centre of the initial board, as a starting point to arrange content around. It is not a fixed background or a title that follows the board's expanding centre. | Must (phase 5) |
+
+The central title must not be recreated on every visit or duplicated if an
+editor moves, edits or deletes it. Broader font-size choices for notes and
+lists are also deferred to phase 5.
+
 ## 8. Saving, data persistence, and recovery
 
   -----------------------------------------------------------------------
@@ -870,6 +888,10 @@ Updated timestamp
 **Image content** - Element ID - Storage object reference - Optional
 caption - Image metadata
 
+**Standalone text content (phase 5)** - Element ID - Plain text - Font size -
+Text colour - Alignment. Extend the board element types with `text` when
+implementing this addition; it is not currently part of the persisted schema.
+
 **List content** - Element ID - Title
 
 **List item** - Item ID - Parent list ID - Text - Completed state -
@@ -1017,6 +1039,23 @@ Estimated effort for one developer familiar with the chosen stack:
 These are rough estimates. The canvas interactions, mobile behaviour,
 and secure implementation of the two-password model are the largest
 uncertainties.
+
+### Implementation checkpoint — 5 November 2026
+
+Phase 4 content implementation is complete: notes, lists, private photo
+uploads, captions, staged replacement with Done/Cancel, deletion feedback,
+larger photo cards and full-screen photo viewing. The user has reported PC
+and phone testing; the latest photo-size/viewer changes still need a final
+phone recheck. Automated verification currently passes 81 tests, typecheck
+and the production build.
+
+Proceed to phase 5 with the standalone text elements in section 7.5,
+personal styling, broader font sizes, IndexedDB drafts and failed-save
+polish. Carry over the misleading session-expiry banner for permission
+failures and the re-login draft/queue recovery fix and verification.
+Phase 4 implementation completion is not a production release sign-off:
+hosted upload/privacy checks, remaining failure/recovery acceptance checks,
+backups and restore verification remain release gates.
 
 ### Suggested development order
 

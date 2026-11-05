@@ -29,6 +29,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export interface UploadedImage {
+  mediaId: string;
+  width: number;
+  height: number;
+}
+
+export async function uploadImage(csrfToken: string, file: File, onProgress: (message: string) => void): Promise<UploadedImage> {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('Choose a JPEG, PNG or WebP photo. HEIC is not supported; export it as JPEG first.');
+  }
+  if (!file.size || file.size > 10 * 1024 * 1024) throw new Error('Choose a photo between 1 byte and 10 MiB.');
+  const init = (body: unknown): RequestInit => ({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+    body: JSON.stringify(body),
+  });
+  onProgress('Preparing upload…');
+  const ticket = await request<{ uploadId: string; signedUrl: string }>(
+    '/api/media/uploads', init({ byteSize: file.size, mimeType: file.type }),
+  );
+  onProgress('Uploading photo…');
+  let response: Response;
+  try {
+    response = await fetch(ticket.signedUrl, {
+      method: 'PUT', credentials: 'omit', referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': file.type }, body: file,
+    });
+  } catch {
+    throw new Error('Photo upload failed. Check your connection and try again.');
+  }
+  if (!response.ok) throw new Error('Photo upload failed. Please try again.');
+  onProgress('Processing photo…');
+  return request<UploadedImage>(`/api/media/uploads/${ticket.uploadId}/complete`, init({}));
+}
+
 export function boardApi(csrfToken: string) {
   const mutation = (method: string, body: unknown): RequestInit => ({
     method,

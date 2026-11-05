@@ -1,5 +1,4 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { UploadPrototype } from '../features/media/UploadPrototype';
 import { BoardView } from '../features/board/BoardView';
 
 type Session = { role: 'viewer' | 'editor'; expiresAt: string; csrfToken: string };
@@ -48,15 +47,7 @@ export default function App() {
 
   if (!loading && session) {
     return (
-      <>
-        <BoardView session={session} onLogout={() => void logout()} onSession={setSession} />
-        {session.role === 'editor' && (
-          <details className="fixed right-2 bottom-2 w-72 rounded-lg border border-neutral-300 bg-white p-2 text-xs shadow-lg">
-            <summary className="cursor-pointer">Upload prototype (phase 1)</summary>
-            <UploadPrototype csrfToken={session.csrfToken} />
-          </details>
-        )}
-      </>
+      <BoardView session={session} onLogout={() => void logout()} onSession={setSession} />
     );
   }
 

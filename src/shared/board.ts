@@ -14,6 +14,15 @@ export const CARD_MIN_WIDTH = 200;
 export const CARD_MAX_WIDTH = 900;
 export const CARD_MIN_HEIGHT = 120;
 export const CARD_MAX_HEIGHT = 4000;
+export const IMAGE_MAX_WIDTH = 2400;
+
+export function imageCardSize(element: { x: number; y: number; width: number; height: number }, requestedWidth: number) {
+  const ratio = element.width / element.height;
+  const maxWidth = Math.min(IMAGE_MAX_WIDTH, CARD_MAX_HEIGHT * ratio, BOARD_MAX_AXIS - element.x, (BOARD_MAX_AXIS - element.y) * ratio);
+  const minWidth = Math.min(maxWidth, Math.max(CARD_MIN_WIDTH, CARD_MIN_HEIGHT * ratio));
+  const width = Math.floor(Math.min(maxWidth, Math.max(minWidth, requestedWidth)));
+  return { width, height: Math.round(width / ratio) };
+}
 
 export const MAX_ELEMENTS = 500;
 export const NOTE_BODY_MAX = 10_000;

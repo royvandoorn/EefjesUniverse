@@ -8,6 +8,7 @@ export default defineConfig(({ command }) => ({
   esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
+    environmentMatchGlobs: [['src/**/*.test.tsx', 'jsdom']],
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts?(x)'],
   },
 }));

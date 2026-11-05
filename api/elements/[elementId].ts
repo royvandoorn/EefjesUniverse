@@ -81,6 +81,20 @@ async function patch(req: VercelRequest, res: VercelResponse, elementId: string)
   if (!updated) {
     return sendError(res, 409, 'conflict', 'Card changed elsewhere; reload and retry');
   }
+  if (current.media_id && updated.media_id !== current.media_id) {
+    try {
+      const { data: references, error: referenceError } = await db.from('elements').select('id')
+        .eq('board_id', board).eq('media_id', current.media_id).limit(1);
+      if (!referenceError && references?.length === 0) {
+        const { data: media } = await db.from('media_assets').update({ status: 'deleted' })
+          .eq('id', current.media_id).eq('board_id', board).select('storage_key').maybeSingle();
+        if (media?.storage_key) await db.storage.from(MEDIA_BUCKET).remove([media.storage_key]);
+      }
+    } catch {
+      res.status(200).json({ element: toElement(updated) });
+      return;
+    }
+  }
   res.status(200).json({ element: toElement(updated) });
 }
 

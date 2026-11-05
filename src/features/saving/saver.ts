@@ -66,7 +66,7 @@ export class BoardSaver {
 
   hasPending(id: string): boolean {
     const entry = this.entries.get(id);
-    return !!entry && (Object.keys(entry.pending).length > 0 || !!entry.pendingItems);
+    return !!entry && (entry.sending || Object.keys(entry.pending).length > 0 || !!entry.pendingItems);
   }
 
   /** Queue content/layout fields; flushed after a short debounce or on demand. */
@@ -131,14 +131,14 @@ export class BoardSaver {
             entry.pendingItems = undefined;
             const { element, items: saved } = await this.api.replaceItems(id, entry.revision, sentItems);
             entry.revision = element.revision;
-            this.callbacks.onElement(element);
-            this.callbacks.onItems(id, saved);
+            this.callbacks.onElement({ ...element, ...entry.pending });
+            if (!entry.pendingItems) this.callbacks.onItems(id, saved);
           } else {
             sentPatch = entry.pending;
             entry.pending = {};
             const { element } = await this.api.patchElement(id, { expectedRevision: entry.revision, ...sentPatch });
             entry.revision = element.revision;
-            this.callbacks.onElement(element);
+            this.callbacks.onElement({ ...element, ...entry.pending });
           }
           entry.attempts = 0;
         } catch (error) {

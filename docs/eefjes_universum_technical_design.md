@@ -1,15 +1,17 @@
 # Eefje's universum — Technical Design
 
 **Version:** 1.0  
-**Status:** In implementation — phases 1–3 (foundation, security, canvas basics) built and verified, including real-phone testing  
-**Date:** 3 November 2026  
+**Status:** Phases 1–4 implemented; PC/phone testing reported, latest photo controls awaiting final phone recheck; phase 5 additions and release gates tracked below
+
+**Date:** 5 November 2026
+
 **Source:** [Product Requirements Document v1.0](./eefjes_universum_requirements.md)
 
 ## 1. Scope and design assumptions
 
 Build one private, free-form scrapbook board with shared viewer/editor passwords, notes, photographs, checkable lists, visual groupings, touch-friendly positioning, and automatic persistence.
 
-The repository currently contains requirements only. Technologies, interfaces, schema and numerical limits below are proposed decisions, not existing implementation facts.
+This document began as a proposed design. Phases 1–4 now have an implementation; the checkpoint in section 12.4 distinguishes reported verification, deferred phase 5 work and outstanding release checks. Earlier proposed details are not all descriptions of the current code.
 
 Include captions and visual groupings because the PRD MVP checklist includes them, despite some detailed requirements marking them Should-have. Plan resizing, optional note titles, note colours and image replacement as Should-have features; record any release deferral explicitly. Operational backups are included; a user-facing export interface remains optional.
 
@@ -233,6 +235,17 @@ Render text/card shells before images. Avoid original-sized downloads, heavy gra
 
 Proposed targets, not measured claims: usable board within three seconds on a representative mobile connection with 50 mixed cards; drag near device refresh rate on agreed hardware; no per-pointer network writes; immediate failure indication when detected. Record dataset, network, device and cold-start conditions.
 
+### 9.1 Standalone text elements — planned phase 5 addition
+
+Implement PRD TEXT-01–05 as a fourth element type, `text`, using the existing element geometry, revision, autosave and editor/viewer authorization model. This is a planned schema/API/UI extension, not an already supported type and not a missing phase 4 feature.
+
+- Proposed validated content: `{ body, fontSize, colourKey, alignment }`. Keep text plain (no injected HTML), reuse the note-body length limit, bound font size to a useful heading range and validate alignment and colour against allowlists. Choose the exact size range and palette during phase 5 styling.
+- Extend shared type/content schemas, database type/content constraints and API validation/read mapping together. Preserve compatibility with existing notes, lists and images; do not disguise text as transparent notes. Continue server-enforced board scoping and editor-only mutations.
+- Render text directly on the board without a paper background, border or frame. Show move/resize/edit controls only to editors, with touch and keyboard alternatives. Provide font-size, colour and alignment controls. Viewers see styled text only.
+- Headings label nearby cards visually; they do not create group membership or change surrounding cards' coordinates. Keep visual-group backgrounds as a separate concept.
+- Initialize one “Eefje's universum” text element centred near the initial 2400 × 1600 board's middle (1200, 800 world pixels). Use an explicitly applied, one-time migration or setup action that does not overwrite existing content. Do not create it during page load, recenter it as the board expands, or recreate it after user deletion. It remains editable and movable.
+- Test text CRUD, style/geometry persistence, viewer denial, plain-text rendering, phone readability and one-time title initialization. Broader note/list font-size choices are also phase 5 work.
+
 ## 10. Deployment, cost and recovery
 
 ### 10.1 Environments and release
@@ -302,6 +315,7 @@ Monitor login spikes, error/latency rates, image failures, cleanup backlog, back
 | CAT-06–07 | Custom editing/filtering deferred |
 | NOTE-01–08 | CRUD, optional title, palette, movement/resize/persistence |
 | NOTE-09 | Stored timestamps; display optional |
+| TEXT-01–05 | Section 9.1; phase 5 standalone headings, styling, persistence, permissions and one-time central title |
 | IMG-01–10 | Upload/caption/replace/delete, validation, aspect, optimization |
 | LIST-01–10 | Required title, item CRUD/completion/order, resize/reload |
 | CNT-01–06 | Shared guards, transactional content mutations, cleanup |
@@ -317,7 +331,21 @@ Monitor login spikes, error/latency rates, image failures, cleanup backlog, back
 2. Security: schema, private bucket, password setup, sessions, authorization — tested standalone before any content work.
 3. Canvas basics: drag, auto-placement, scroll, edit, save — **tested on a real phone** before extra navigation features.
 4. Content: notes, lists, pictures (simple version).
-5. Polish: personal styling, IndexedDB drafts, failed-save handling, "Find content" only if mobile testing shows it's needed.
+5. Polish: standalone text headings and one-time central title (section 9.1), personal styling, broader font sizes, IndexedDB drafts, failed-save/session-recovery handling, "Find content" only if mobile testing shows it's needed.
 6. Operations: daily backups, one real restore test, production privacy checks, handover.
+
+### 12.4 Phase 4 checkpoint and carry-over — 5 November 2026
+
+Phase 4 content implementation is complete. Implemented: note/list editing and persistence; private photo upload and captions; upload-then-Done replacement with Cancel; duplicate-create prevention; deletion progress feedback; save-response reconciliation to prevent stale position/text resets; photo widths up to 2400 px (subject to height/board bounds), proportional size controls and full-screen viewing with zoom for both roles.
+
+Verification: 81 automated tests, typecheck and production build pass. The user reported PC and phone testing. Recheck the latest photo-size and full-screen controls on the actual phone; do not treat this as already verified or as evidence of hosted production behaviour.
+
+Explicit phase 5 carry-over:
+- Standalone text/section headings and the one-time central “Eefje's universum” element (section 9.1; PRD TEXT-01–05).
+- Personal styling and a wider note/list font-size range.
+- IndexedDB drafts, failed-save handling and optional "Find content" navigation.
+- Distinguish permission/origin/CSRF failures from real session expiry; preserve and resume draft/save-queue state correctly across re-login, with regression and manual recovery checks. These remain outstanding, not completed phase 4 verification claims.
+
+Before production release, confirm remaining viewer, failure/retry and session-recovery acceptance cases, real-photo upload through hosted Vercel/Supabase, hosted privacy controls, backups and a restore. Local automated tests and reported phone use do not replace those checks.
 
 Release when all Musts pass, planned Shoulds pass or are explicitly deferred, no anonymous/viewer mutation route remains, the actual phone is usable, and recovery is demonstrated. Open product/provider decisions remain tracked rather than treated as implemented facts.

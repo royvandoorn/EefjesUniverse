@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BoardElement, ListItem, NoteContent, ListContent, ImageContent } from '../../shared/board.ts';
-import { NOTE_BODY_MAX, TITLE_MAX, CAPTION_MAX, ITEM_TEXT_MAX, MAX_LIST_ITEMS } from '../../shared/board.ts';
+import { NOTE_BODY_MAX, TITLE_MAX, CAPTION_MAX, ITEM_TEXT_MAX, MAX_LIST_ITEMS, imageCardSize } from '../../shared/board.ts';
 import { NOTE_COLOUR_KEYS } from './ElementCard.tsx';
+import { PhotoUpload } from './PhotoUpload.tsx';
+import type { UploadedImage } from './api.ts';
 
 interface Props {
   element: BoardElement;
@@ -9,22 +11,27 @@ interface Props {
   onPatchContent(content: Record<string, unknown>): void;
   onReplaceItems(items: { text: string; completed: boolean }[]): void;
   onClose(): void;
+  csrfToken: string;
+  onReplaceImage(image: UploadedImage): Promise<void>;
+  onSessionExpired(): void;
+  onResizePhoto?(factor: number): void;
 }
 
 /**
  * One editor at a time. Every change is pushed through the save queue
  * (debounced there), so "Done" closes the dialog but is not the only save.
  */
-export function CardEditor({ element, items, onPatchContent, onReplaceItems, onClose }: Props) {
+export function CardEditor({ element, items, onPatchContent, onReplaceItems, onClose, csrfToken, onReplaceImage, onSessionExpired, onResizePhoto }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
-    const onCancel = () => onClose();
+    const onCancel = (event: Event) => { event.preventDefault(); if (!uploadBusy) onClose(); };
     dialog?.addEventListener('cancel', onCancel);
     return () => dialog?.removeEventListener('cancel', onCancel);
-  }, [onClose]);
+  }, [onClose, uploadBusy]);
 
   return (
     <dialog
@@ -34,8 +41,8 @@ export function CardEditor({ element, items, onPatchContent, onReplaceItems, onC
     >
       <div className="flex items-center justify-between border-b border-neutral-200 p-3">
         <h2 className="font-semibold">Edit {element.type === 'note' ? 'note' : element.type === 'list' ? 'list' : 'photo'}</h2>
-        <button type="button" className="min-h-11 min-w-11 rounded bg-neutral-800 px-4 text-white" onClick={onClose}>
-          Done
+        <button type="button" className="min-h-11 min-w-11 rounded bg-neutral-800 px-4 text-white" onClick={onClose} disabled={uploadBusy}>
+          {element.type === 'image' ? 'Close' : 'Done'}
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -43,7 +50,20 @@ export function CardEditor({ element, items, onPatchContent, onReplaceItems, onC
         {element.type === 'list' && (
           <ListFields element={element} items={items} onPatchContent={onPatchContent} onReplaceItems={onReplaceItems} />
         )}
-        {element.type === 'image' && <ImageFields element={element} onPatchContent={onPatchContent} />}
+        {element.type === 'image' && <div className="flex flex-col gap-4">
+          <ImageFields element={element} onPatchContent={onPatchContent} />
+          {onResizePhoto && <fieldset className="text-sm">
+            <legend className="mb-2 font-medium">Photo size on board</legend>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="min-h-11 rounded border border-neutral-300 px-4 disabled:opacity-50"
+                disabled={imageCardSize(element, element.width * 0.8).width >= element.width} onClick={() => onResizePhoto(0.8)}>Smaller photo</button>
+              <button type="button" className="min-h-11 rounded border border-neutral-300 px-4 disabled:opacity-50"
+                disabled={imageCardSize(element, element.width * 1.25).width <= element.width} onClick={() => onResizePhoto(1.25)}>Larger photo</button>
+              <span>{Math.round(element.width)} × {Math.round(element.height)} px</span>
+            </div>
+          </fieldset>}
+          <PhotoUpload csrfToken={csrfToken} replacing onAttach={onReplaceImage} onBusy={setUploadBusy} onSessionExpired={onSessionExpired} />
+        </div>}
       </div>
     </dialog>
   );
@@ -178,7 +198,7 @@ function ListFields({ element, items, onPatchContent, onReplaceItems }: {
           maxLength={TITLE_MAX}
           required
           defaultValue={content.title}
-          onChange={event => event.target.value.trim() && onPatchContent({ title: event.target.value })}
+          onChange={event => event.target.value.trim() && onPatchContent({ ...content, title: event.target.value })}
         />
       </label>
       <ul className="flex flex-col gap-1">

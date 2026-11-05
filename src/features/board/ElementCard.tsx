@@ -1,7 +1,8 @@
-import type { PointerEvent as ReactPointerEvent, KeyboardEvent } from 'react';
+import { useState, type PointerEvent as ReactPointerEvent, type KeyboardEvent } from 'react';
 import type { BoardElement, ListItem, NoteContent, ListContent, ImageContent, TextSize } from '../../shared/board.ts';
 import type { SaveState } from '../saving/saver.ts';
 import type { Rect } from './placement.ts';
+import { PhotoViewer } from './PhotoViewer.tsx';
 
 const NOTE_COLOURS: Record<string, string> = {
   paper: 'bg-amber-50 border-amber-200',
@@ -39,6 +40,7 @@ interface Props {
   items: ListItem[];
   live: Partial<Rect> | undefined;
   editable: boolean;
+  deleting?: boolean;
   status: SaveState;
   registerRef(id: string, node: HTMLElement | null): void;
   onHandlePointerDown(event: ReactPointerEvent, id: string): void;
@@ -86,6 +88,13 @@ export function ElementCard(props: Props) {
       props.onKeyboardResize(element.id, d[0], d[1]);
     }
   };
+
+  if (props.deleting) return (
+    <article className="absolute flex items-center justify-center rounded-lg border border-neutral-300 bg-white/80 text-sm text-neutral-600"
+      style={{ left: x, top: y, width, height, zIndex: element.zIndex }} aria-busy="true" aria-label={`${element.type} card`}>
+      <span role="status">Deleting…</span>
+    </article>
+  );
 
   return (
     <article
@@ -209,15 +218,38 @@ function ListBody({ content, items, editable, onToggle }: {
 }
 
 function ImageBody({ element, content }: { element: BoardElement; content: ImageContent }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [viewing, setViewing] = useState(false);
+  const mediaId = content.mediaId;
   return (
     <figure className="flex h-full flex-col">
-      <img
-        src={`/api/media/${element.mediaId ?? content.mediaId}/display`}
-        alt={content.caption ?? 'Photo'}
-        loading="lazy"
-        draggable={false}
-        className="min-h-0 flex-1 rounded object-contain"
-      />
+      {failed === mediaId ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-sm" role="status">
+          <span>Photo unavailable.</span>
+          <button type="button" className="min-h-11 rounded border px-3" onClick={() => { setFailed(null); setAttempt(value => value + 1); }}>Retry photo</button>
+        </div>
+      ) : <>
+        {loaded !== mediaId && <span role="status" className="text-xs text-neutral-500">Loading photo…</span>}
+        <button type="button" aria-label="View photo full screen" className="relative min-h-0 w-full flex-1 cursor-zoom-in rounded focus-visible:outline-2 focus-visible:outline-offset-2" onClick={() => setViewing(true)}>
+        <img
+          key={`${mediaId}-${attempt}`}
+          src={`/api/media/${mediaId}/display`}
+          alt={content.caption ?? 'Photo'}
+          width={element.width}
+          height={element.height}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onLoad={() => setLoaded(mediaId)}
+          onError={() => setFailed(mediaId)}
+          className="h-full w-full rounded object-contain"
+        />
+        <span className="absolute right-1 bottom-1 rounded bg-black/70 px-2 py-1 text-xs text-white">View full screen</span>
+        </button>
+      </>}
+      {viewing && <PhotoViewer content={content} onClose={() => setViewing(false)} />}
       {content.caption && <figcaption className="mt-1 text-sm break-words">{content.caption}</figcaption>}
     </figure>
   );

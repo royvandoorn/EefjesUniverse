@@ -70,6 +70,64 @@ describe('BoardSaver', () => {
     expect(client.patchElement).toHaveBeenLastCalledWith('e1', expect.objectContaining({ expectedRevision: 2 }));
   });
 
+  it('keeps the latest drag position visible while an older save is acknowledged', async () => {
+    const responses: ((value: { element: BoardElement }) => void)[] = [];
+    const client = api({ patchElement: vi.fn(() => new Promise<{ element: BoardElement }>(resolve => responses.push(resolve))) });
+    const cb = callbacks();
+    const saver = new BoardSaver(client, cb);
+    saver.setRevision('e1', 1);
+    saver.patch('e1', { x: 100, y: 100 }, true);
+    saver.patch('e1', { x: 200, y: 200 }, true);
+    responses[0]({ element: { ...element('e1', 2), x: 100, y: 100 } });
+    await tick();
+    expect(cb.onElement).toHaveBeenLastCalledWith(expect.objectContaining({ x: 200, y: 200, revision: 2 }));
+    expect(client.patchElement).toHaveBeenLastCalledWith('e1', { expectedRevision: 2, x: 200, y: 200 });
+    responses[1]({ element: { ...element('e1', 3), x: 200, y: 200 } });
+    await tick();
+    expect(cb.statuses.e1).toBe('saved');
+  });
+
+  it('counts an in-flight save as pending so refresh cannot reset its position', async () => {
+    let finish!: (value: { element: BoardElement }) => void;
+    const saver = new BoardSaver(api({ patchElement: vi.fn(() => new Promise<{ element: BoardElement }>(resolve => { finish = resolve; })) }), callbacks());
+    saver.setRevision('e1', 1);
+    saver.patch('e1', { x: 200 }, true);
+    expect(saver.hasPending('e1')).toBe(true);
+    finish({ element: { ...element('e1', 2), x: 200 } });
+    await tick();
+    expect(saver.hasPending('e1')).toBe(false);
+  });
+
+  it('keeps newer content visible when a layout save completes', async () => {
+    const responses: ((value: { element: BoardElement }) => void)[] = [];
+    const cb = callbacks();
+    const saver = new BoardSaver(api({ patchElement: vi.fn(() => new Promise<{ element: BoardElement }>(resolve => responses.push(resolve))) }), cb);
+    saver.setRevision('e1', 1);
+    saver.patch('e1', { x: 100 }, true);
+    const content = { ...element('e1', 1).content, body: 'Still typing' };
+    saver.patch('e1', { content });
+    responses[0]({ element: { ...element('e1', 2), x: 100 } });
+    await tick();
+    expect(cb.onElement).toHaveBeenLastCalledWith(expect.objectContaining({ content }));
+    responses[1]({ element: { ...element('e1', 3), x: 100, content } });
+    await tick();
+  });
+
+  it('does not replace newer list edits with an older item response', async () => {
+    const responses: ((value: { element: BoardElement; items: { id: string; text: string; completed: boolean; position: number }[] }) => void)[] = [];
+    const cb = callbacks();
+    const saver = new BoardSaver(api({ replaceItems: vi.fn(() => new Promise<Awaited<ReturnType<BoardApi['replaceItems']>>>(resolve => responses.push(resolve))) }), cb);
+    saver.setRevision('e1', 1);
+    saver.setItems('e1', [{ text: 'Old', completed: false }], true);
+    saver.setItems('e1', [{ text: 'New', completed: false }], true);
+    responses[0]({ element: element('e1', 2), items: [{ id: 'i1', text: 'Old', completed: false, position: 0 }] });
+    await tick();
+    expect(cb.onItems).not.toHaveBeenCalled();
+    responses[1]({ element: element('e1', 3), items: [{ id: 'i1', text: 'New', completed: false, position: 0 }] });
+    await tick();
+    expect(cb.onItems).toHaveBeenLastCalledWith('e1', [expect.objectContaining({ text: 'New' })]);
+  });
+
   it('retries transient failures and then succeeds', async () => {
     let calls = 0;
     const client = api({

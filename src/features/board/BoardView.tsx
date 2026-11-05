@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type FormEvent } from 'react';
 import {
   BOARD_MAX_AXIS,
+  imageCardSize,
   CARD_DEFAULT_HEIGHT,
   CARD_DEFAULT_WIDTH,
   CARD_MAX_HEIGHT,
@@ -16,6 +17,9 @@ import { findFreeSpot, worldSize, type Rect } from './placement.ts';
 import { BoardSaver, type SaveState } from '../saving/saver.ts';
 import { ElementCard } from './ElementCard.tsx';
 import { CardEditor } from './CardEditor.tsx';
+import { PhotoUpload } from './PhotoUpload.tsx';
+import type { UploadedImage } from './api.ts';
+import { createUuid } from '../../shared/uuid.ts';
 
 export interface SessionInfo {
   role: 'viewer' | 'editor';
@@ -42,10 +46,14 @@ function mergeItems(prev: ListItem[] | undefined, next: ListItem[]): ListItem[] 
     if (ids) ids.push(item.id);
     else pool.set(key, [item.id]);
   }
-  return next.map(item => ({
-    ...item,
-    id: pool.get(`${item.text}${item.completed}`)?.shift() ?? item.id,
-  }));
+  const matched = next.map(item => pool.get(`${item.text}${item.completed}`)?.shift());
+  const used = new Set(matched.filter(Boolean));
+  return next.map((item, index) => {
+    const previous = prev?.[index]?.id;
+    const id = matched[index] ?? (previous && !used.has(previous) ? previous : item.id);
+    used.add(id);
+    return { ...item, id };
+  });
 }
 
 interface DragState {
@@ -80,6 +88,13 @@ export function BoardView({ session, onLogout, onSession }: {
   const [statuses, setStatuses] = useState<Record<string, SaveState>>({});
   const [live, setLive] = useState<Record<string, Partial<Rect>>>({});
   const [editing, setEditing] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const deletingRef = useRef(new Set<string>());
+  const [newPhoto, setNewPhoto] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoId = useRef(createUuid());
   const [zoom, setZoom] = useState(1);
   const [notice, setNotice] = useState('');
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -334,11 +349,13 @@ export function BoardView({ session, onLogout, onSession }: {
         y: clamp(Math.round(drag.orig.y + dy), 0, BOARD_MAX_AXIS - drag.orig.height),
       };
     } else {
-      const width = clamp(Math.round(drag.orig.width + dx), CARD_MIN_WIDTH, Math.min(CARD_MAX_WIDTH, CARD_MAX_HEIGHT));
-      const height = drag.ratio
-        ? clamp(Math.round(width / drag.ratio), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
-        : clamp(Math.round(drag.orig.height + dy), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT);
-      drag.cur = { ...drag.cur, width, height };
+      const size = drag.ratio
+        ? imageCardSize(drag.orig, drag.orig.width + dx)
+        : {
+          width: clamp(Math.round(drag.orig.width + dx), CARD_MIN_WIDTH, CARD_MAX_WIDTH),
+          height: clamp(Math.round(drag.orig.height + dy), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT),
+        };
+      drag.cur = { ...drag.cur, ...size };
     }
     scheduleLive(drag.id, drag.cur);
   }, [scheduleLive]);
@@ -413,7 +430,9 @@ export function BoardView({ session, onLogout, onSession }: {
 
   const addElement = useCallback(async (type: 'note' | 'list') => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     const center = {
       x: (container.scrollLeft + container.clientWidth / 2) / zoomRef.current,
       y: (container.scrollTop + container.clientHeight / 2) / zoomRef.current,
@@ -423,7 +442,7 @@ export function BoardView({ session, onLogout, onSession }: {
     const pos = findFreeSpot(occupied, size, center, world);
     const content = type === 'note' ? { body: '', colourKey: 'paper' } : { title: 'New list', colourKey: 'white' };
     try {
-      const { element } = await api.createElement({ id: crypto.randomUUID(), type, ...pos, ...size, content });
+      const { element } = await api.createElement({ id: createUuid(), type, ...pos, ...size, content });
       applyElement(element);
       saverRef.current?.setRevision(element.id, element.revision);
       setStatuses(prev => ({ ...prev, [element.id]: 'saved' }));
@@ -432,12 +451,35 @@ export function BoardView({ session, onLogout, onSession }: {
       setEditing(element.id);
     } catch {
       setNotice('Could not create the card. Please try again.');
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   }, [api, applyElement, world]);
 
+  const addPhoto = async (image: UploadedImage) => {
+    const container = containerRef.current;
+    if (!container) throw new Error('Board unavailable. Please try again.');
+    const center = {
+      x: (container.scrollLeft + container.clientWidth / 2) / zoomRef.current,
+      y: (container.scrollTop + container.clientHeight / 2) / zoomRef.current,
+    };
+    const size = { width: CARD_DEFAULT_WIDTH, height: clamp(Math.round(CARD_DEFAULT_WIDTH * image.height / image.width) + 80, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT) };
+    const pos = findFreeSpot(Object.values(elementsRef.current), size, center, world);
+    const { element } = await api.createElement({ id: photoId.current, type: 'image', ...pos, ...size, content: { mediaId: image.mediaId } });
+    applyElement(element);
+    saverRef.current?.setRevision(element.id, element.revision);
+    setStatuses(prev => ({ ...prev, [element.id]: 'saved' }));
+    setNewPhoto(false);
+    setEditing(element.id);
+    requestAnimationFrame(() => cardRefs.current.get(element.id)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+  };
+
   const deleteElement = useCallback(async (id: string) => {
     const element = elementsRef.current[id];
-    if (!element || !window.confirm('Delete this card? This cannot be undone.')) return;
+    if (!element || deletingRef.current.has(id) || !window.confirm('Delete this card? This cannot be undone.')) return;
+    deletingRef.current.add(id);
+    setDeleting(new Set(deletingRef.current));
     try {
       await api.deleteElement(id, saverRef.current?.revision(id) ?? element.revision);
       saverRef.current?.discard(id);
@@ -454,6 +496,9 @@ export function BoardView({ session, onLogout, onSession }: {
       if (editing === id) setEditing(null);
     } catch {
       setNotice('Could not delete the card. Please try again.');
+    } finally {
+      deletingRef.current.delete(id);
+      setDeleting(new Set(deletingRef.current));
     }
   }, [api, editing]);
 
@@ -474,10 +519,12 @@ export function BoardView({ session, onLogout, onSession }: {
   const keyboardResize = useCallback((id: string, dw: number, dh: number) => {
     const element = elementsRef.current[id];
     if (!element) return;
-    const width = clamp(element.width + dw, CARD_MIN_WIDTH, CARD_MAX_WIDTH);
-    const height = element.type === 'image'
-      ? clamp(Math.round(width / (element.width / element.height)), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
-      : clamp(element.height + dh, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT);
+    const { width, height } = element.type === 'image'
+      ? imageCardSize(element, element.width + dw)
+      : {
+        width: clamp(element.width + dw, CARD_MIN_WIDTH, CARD_MAX_WIDTH),
+        height: clamp(element.height + dh, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT),
+      };
     setElements(prev => ({ ...prev, [id]: { ...element, width, height } }));
     saverRef.current?.patch(id, { width, height }, true);
   }, []);
@@ -496,7 +543,7 @@ export function BoardView({ session, onLogout, onSession }: {
   const replaceItems = useCallback((id: string, next: { text: string; completed: boolean }[]) => {
     setItems(prev => ({
       ...prev,
-      [id]: mergeItems(prev[id], next.map((item, position) => ({ id: `pending-${crypto.randomUUID()}`, position, ...item }))),
+      [id]: mergeItems(prev[id], next.map((item, position) => ({ id: `pending-${createUuid()}`, position, ...item }))),
     }));
     saverRef.current?.setItems(id, next);
   }, []);
@@ -555,11 +602,14 @@ export function BoardView({ session, onLogout, onSession }: {
         </span>
         {editable && (
           <>
-            <button type="button" className="min-h-11 rounded bg-neutral-800 px-3 text-sm text-white" onClick={() => void addElement('note')}>
+            <button type="button" className="min-h-11 rounded bg-neutral-800 px-3 text-sm text-white" disabled={creating} onClick={() => void addElement('note')}>
               + Note
             </button>
-            <button type="button" className="min-h-11 rounded bg-neutral-800 px-3 text-sm text-white" onClick={() => void addElement('list')}>
+            <button type="button" className="min-h-11 rounded bg-neutral-800 px-3 text-sm text-white" disabled={creating} onClick={() => void addElement('list')}>
               + List
+            </button>
+            <button type="button" className="min-h-11 rounded bg-neutral-800 px-3 text-sm text-white" onClick={() => { photoId.current = createUuid(); setNewPhoto(true); }}>
+              + Photo
             </button>
           </>
         )}
@@ -616,6 +666,7 @@ export function BoardView({ session, onLogout, onSession }: {
             <ElementCard
               key={element.id}
               element={element}
+              deleting={deleting.has(element.id)}
               items={items[element.id] ?? []}
               live={live[element.id]}
               editable={editable}
@@ -635,8 +686,25 @@ export function BoardView({ session, onLogout, onSession }: {
         </div>
       </div>
 
+      {newPhoto && editable && (
+        <dialog ref={node => { if (node && !node.open) node.showModal(); }}
+          onCancel={event => { event.preventDefault(); if (!photoBusy) setNewPhoto(false); }}
+          aria-label="Add photo" className="fixed inset-0 m-auto w-[min(92vw,32rem)] rounded-xl border border-neutral-300 p-4 shadow-xl backdrop:bg-black/40">
+          <h2 className="mb-4 font-semibold">Add photo</h2>
+          <PhotoUpload csrfToken={session.csrfToken} onAttach={addPhoto} onBusy={setPhotoBusy} onSessionExpired={() => setSessionExpired(true)} />
+          <button type="button" disabled={photoBusy} className="mt-3 min-h-11 rounded border border-neutral-300 px-4" onClick={() => setNewPhoto(false)}>Cancel</button>
+        </dialog>
+      )}
       {editingElement && editable && (
         <CardEditor
+          key={editingElement.id}
+          csrfToken={session.csrfToken}
+          onResizePhoto={factor => keyboardResize(editingElement.id, editingElement.width * (factor - 1), 0)}
+          onReplaceImage={async image => {
+            patchContent(editingElement.id, { ...elementsRef.current[editingElement.id].content, mediaId: image.mediaId });
+            saverRef.current?.flush(editingElement.id);
+          }}
+          onSessionExpired={() => setSessionExpired(true)}
           element={editingElement}
           items={items[editingElement.id] ?? []}
           onPatchContent={content => patchContent(editingElement.id, content)}
