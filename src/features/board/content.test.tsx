@@ -28,7 +28,7 @@ afterEach(async () => {
 const element: BoardElement = {
   id: 'list', type: 'list', x: 0, y: 0, width: 320, height: 240, zIndex: 1,
   groupId: null, mediaId: null, revision: 1, createdAt: '', updatedAt: '',
-  content: { title: 'Plans', colourKey: 'rose', titleSize: 'large', itemSize: 'small' },
+  content: { title: 'Plans', colourKey: 'rose', titleSize: 'large', itemSize: 'small', font: 'sans' },
 };
 
 function mockBoard(elements: BoardElement[] = []): BoardApi {
@@ -50,7 +50,7 @@ it('ignores duplicate create clicks while the first card is being created', asyn
   await act(async () => { add.click(); add.click(); });
   expect(client.createElement).toHaveBeenCalledTimes(1);
   expect(add.disabled).toBe(true);
-  await act(async () => finish({ element: { ...element, type: 'note', content: { body: '', colourKey: 'paper', titleSize: 'medium', bodySize: 'medium' } } }));
+  await act(async () => finish({ element: { ...element, type: 'note', content: { body: '', colourKey: 'paper', titleSize: 'medium', bodySize: 'medium', font: 'sans' } } }));
   expect(add.disabled).toBe(false);
   expect(host.querySelectorAll('article')).toHaveLength(1);
 });
@@ -87,6 +87,56 @@ it('lets viewers open, zoom, fit, and close a photo without changing the board',
   await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Close photo')!.click());
   expect(document.querySelector('[aria-label="Full-screen photo"]')).toBeNull();
   expect(client.patchElement).not.toHaveBeenCalled();
+});
+
+it('renders standalone text without card chrome for viewers', async () => {
+  const text: BoardElement = {
+    ...element, id: 'heading', type: 'text',
+    content: { body: 'Our favourite place', fontSize: 'large', colourKey: 'berry', alignment: 'center', font: 'serif' },
+  };
+  mockBoard([text]);
+  await act(async () => root.render(<BoardView session={{ role: 'viewer', csrfToken: 'csrf', expiresAt: '' }} onLogout={vi.fn()} onSession={vi.fn()} />));
+  const card = host.querySelector('article')!;
+  const paragraph = card.querySelector('p') as HTMLElement;
+  expect(card.textContent).toContain('Our favourite place');
+  expect(paragraph.style.fontFamily).toContain('Georgia');
+  expect(paragraph.style.fontSize).toBe('60px');
+  expect(paragraph.className).toContain('text-center');
+  expect(card.className).toContain('bg-transparent');
+  expect(card.querySelector('button')).toBeNull();
+});
+
+it('creates a styled text element from the toolbar', async () => {
+  const client = mockBoard();
+  vi.mocked(client.createElement).mockResolvedValue({
+    element: { ...element, type: 'text', content: { body: '', fontSize: 60, colourKey: 'ink', alignment: 'left', font: 'hand' } },
+  });
+  await act(async () => root.render(<BoardView session={{ role: 'editor', csrfToken: 'csrf', expiresAt: '' }} onLogout={vi.fn()} onSession={vi.fn()} />));
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('+ Text'))!.click());
+  expect(client.createElement).toHaveBeenCalledWith(expect.objectContaining({
+    type: 'text',
+    content: { body: '', fontSize: 60, colourKey: 'ink', alignment: 'left', font: 'hand' },
+  }));
+});
+
+it('saves text styling through the shared content patch flow', async () => {
+  const patch = vi.fn();
+  const text: BoardElement = {
+    ...element, type: 'text',
+    content: { body: 'Heading', fontSize: 'medium', colourKey: 'ink', alignment: 'left', font: 'hand' },
+  };
+  await act(async () => root.render(<CardEditor element={text} items={[]} csrfToken="csrf"
+    onPatchContent={patch} onReplaceItems={vi.fn()} onClose={vi.fn()} onReplaceImage={vi.fn()} onSessionExpired={vi.fn()} />));
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === 'Colour berry')!.click());
+  expect(patch).toHaveBeenLastCalledWith({ ...text.content, colourKey: 'berry' });
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Centre')!.click());
+  expect(patch).toHaveBeenLastCalledWith({ ...text.content, alignment: 'center' });
+  const select = host.querySelector('select')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, '72');
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  expect(patch).toHaveBeenLastCalledWith({ ...text.content, fontSize: 72 });
 });
 
 it('saves enlarged photo dimensions through the existing autosave queue', async () => {

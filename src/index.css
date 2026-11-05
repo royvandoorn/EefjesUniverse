@@ -1,1 +1,20 @@
 @import 'tailwindcss';
+
+/* Scrapbook graph paper: soft blue squares on cream, like a notebook page. */
+.board-surface {
+  background-color: #fdfcf7;
+  background-image:
+    linear-gradient(to right, #dce8f4 1px, transparent 1px),
+    linear-gradient(to bottom, #dce8f4 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+
+/* Gentle bobbing for decorative doodles; disabled for reduced motion. */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0) rotate(var(--tilt, 0deg)); }
+  50% { transform: translateY(-14px) rotate(var(--tilt, 0deg)); }
+}
+.floaty { animation: floaty 5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .floaty { animation: none; }
+}

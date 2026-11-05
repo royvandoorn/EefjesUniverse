@@ -35,32 +35,67 @@ const uuid = z.string().uuid();
 const axis = z.number().int().min(0).max(BOARD_MAX_AXIS);
 const extent = z.number().int().min(1).max(CARD_MAX_HEIGHT);
 
-export const textSizeSchema = z.enum(['small', 'medium', 'large']);
+export const textSizeSchema = z.enum(['small', 'medium', 'large', 'xlarge']);
 export type TextSize = z.infer<typeof textSizeSchema>;
+
+// Word-style point sizes for new edits; legacy named sizes stay valid so
+// cards saved before the dropdown keep rendering.
+export const FONT_SIZE_MIN = 8;
+export const FONT_SIZE_MAX = 160;
+export const fontSizeSchema = z.union([textSizeSchema, z.number().int().min(FONT_SIZE_MIN).max(FONT_SIZE_MAX)]);
+export type FontSize = z.infer<typeof fontSizeSchema>;
+export const FONT_SIZE_OPTIONS = [10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 120] as const;
+
+// One shared palette: keys drive note/list card colours and text colours.
+export const COLOUR_KEYS = [
+  'ink', 'slate', 'cocoa', 'white', 'paper', 'lemon', 'peach', 'coral', 'rose',
+  'pink', 'berry', 'lavender', 'lilac', 'denim', 'sky', 'teal', 'mint', 'lime',
+] as const;
+// Text elements also accept the pre-palette legacy keys so existing cards parse.
+export const textColourSchema = z.enum([...COLOUR_KEYS, 'ocean', 'forest', 'grape', 'rainbow']);
+export type TextColour = z.infer<typeof textColourSchema>;
+
+export const textAlignmentSchema = z.enum(['left', 'center', 'right']);
+export type TextAlignment = z.infer<typeof textAlignmentSchema>;
+
+export const textFontSchema = z.enum(['hand', 'script', 'serif', 'elegant', 'sans', 'round', 'mono', 'black', 'marker', 'papyrus']);
+export type TextFont = z.infer<typeof textFontSchema>;
 
 export const noteContentSchema = z.object({
   title: z.string().max(TITLE_MAX).optional(),
   body: z.string().max(NOTE_BODY_MAX),
   colourKey: z.string().min(1).max(40).default('paper'),
-  titleSize: textSizeSchema.default('medium'),
-  bodySize: textSizeSchema.default('medium'),
+  titleSize: fontSizeSchema.default('medium'),
+  bodySize: fontSizeSchema.default('medium'),
+  font: textFontSchema.default('sans'),
 }).strict();
 
 export const listContentSchema = z.object({
   title: z.string().trim().min(1).max(TITLE_MAX),
   colourKey: z.string().min(1).max(40).default('white'),
-  titleSize: textSizeSchema.default('medium'),
-  itemSize: textSizeSchema.default('medium'),
+  titleSize: fontSizeSchema.default('medium'),
+  itemSize: fontSizeSchema.default('medium'),
+  font: textFontSchema.default('sans'),
 }).strict();
 
 export const imageContentSchema = z.object({
   mediaId: uuid,
   caption: z.string().max(CAPTION_MAX).optional(),
+  captionSize: fontSizeSchema.optional(),
+  captionFont: textFontSchema.optional(),
 }).strict();
 
-export type ElementType = 'note' | 'image' | 'list';
+export const textContentSchema = z.object({
+  body: z.string().max(NOTE_BODY_MAX),
+  fontSize: fontSizeSchema.default('large'),
+  colourKey: textColourSchema.default('ink'),
+  alignment: textAlignmentSchema.default('left'),
+  font: textFontSchema.default('serif'),
+}).strict();
 
-export const elementTypeSchema = z.enum(['note', 'image', 'list']);
+export type ElementType = 'note' | 'image' | 'list' | 'text';
+
+export const elementTypeSchema = z.enum(['note', 'image', 'list', 'text']);
 
 export const listItemInputSchema = z.object({
   text: z.string().trim().min(1).max(ITEM_TEXT_MAX),
@@ -103,7 +138,8 @@ export const replaceItemsSchema = z.object({
 export type NoteContent = z.infer<typeof noteContentSchema>;
 export type ListContent = z.infer<typeof listContentSchema>;
 export type ImageContent = z.infer<typeof imageContentSchema>;
-export type ElementContent = NoteContent | ListContent | ImageContent;
+export type TextContent = z.infer<typeof textContentSchema>;
+export type ElementContent = NoteContent | ListContent | ImageContent | TextContent;
 
 export interface BoardElement {
   id: string;
@@ -146,5 +182,10 @@ export interface BoardPayload {
 }
 
 export function contentSchemaFor(type: ElementType) {
-  return type === 'note' ? noteContentSchema : type === 'list' ? listContentSchema : imageContentSchema;
+  switch (type) {
+    case 'note': return noteContentSchema;
+    case 'list': return listContentSchema;
+    case 'image': return imageContentSchema;
+    case 'text': return textContentSchema;
+  }
 }

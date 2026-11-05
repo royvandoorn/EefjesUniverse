@@ -9,7 +9,7 @@ function element(id: string, revision: number): BoardElement {
   return {
     id, type: 'note', x: 0, y: 0, width: 320, height: 240, zIndex: 1,
     groupId: null, mediaId: null, revision,
-    content: { body: '', colourKey: 'paper', titleSize: 'medium', bodySize: 'medium' },
+    content: { body: '', colourKey: 'paper', titleSize: 'medium', bodySize: 'medium', font: 'sans' },
     createdAt: '', updatedAt: '',
   };
 }
@@ -161,6 +161,80 @@ describe('BoardSaver', () => {
     expect(cb.conflicts).toEqual(['e1']);
     expect(cb.statuses.e1).toBe('conflict');
     expect(client.patchElement).toHaveBeenCalledTimes(1);
+  });
+
+  it('distinguishes a 403 denial from session expiry and keeps the work', async () => {
+    const client = api({
+      patchElement: vi.fn(async () => {
+        throw new ApiError(403, 'forbidden', 'denied');
+      }),
+    });
+    const forbidden = vi.fn();
+    const cb = { ...callbacks(), onForbidden: forbidden };
+    const saver = new BoardSaver(client, cb, () => Promise.resolve());
+    saver.setRevision('e1', 1);
+    saver.patch('e1', { x: 1 }, true);
+    await tick();
+    await tick();
+    expect(forbidden).toHaveBeenCalledTimes(1);
+    expect(cb.expired).toBe(0);
+    expect(cb.statuses.e1).toBe('failed');
+    expect(saver.hasPending('e1')).toBe(true);
+  });
+
+  it('mirrors unconfirmed work to drafts and clears it once acknowledged', async () => {
+    const client = api();
+    const drafts: { id: string; draft: unknown }[] = [];
+    const cb = { ...callbacks(), onDraftChanged: (id: string, draft: unknown) => drafts.push({ id, draft }) };
+    const saver = new BoardSaver(client, cb, () => Promise.resolve());
+    saver.setRevision('e1', 3);
+    saver.patch('e1', { x: 10 });
+    saver.patch('e1', { y: 20 });
+    saver.flush('e1');
+    await tick();
+    await tick();
+    expect(drafts[0]).toEqual({ id: 'e1', draft: { patch: { x: 10 } } });
+    expect(drafts[1]).toEqual({ id: 'e1', draft: { patch: { x: 10, y: 20 } } });
+    expect(drafts.at(-1)).toEqual({ id: 'e1', draft: null });
+  });
+
+  it('keeps the draft when a save fails permanently', async () => {
+    const client = api({
+      patchElement: vi.fn(async () => { throw new ApiError(422, 'invalid_fields', 'bad'); }),
+    });
+    const drafts: ({ id: string; draft: unknown } | undefined)[] = [];
+    const cb = { ...callbacks(), onDraftChanged: (id: string, draft: unknown) => drafts.push({ id, draft }) };
+    const saver = new BoardSaver(client, cb, () => Promise.resolve());
+    saver.setRevision('e1', 1);
+    saver.patch('e1', { x: 5 }, true);
+    await tick();
+    await tick();
+    expect(drafts.at(-1)).toEqual({ id: 'e1', draft: { patch: { x: 5 } } });
+    expect(cb.statuses.e1).toBe('failed');
+  });
+
+  it('hands unconfirmed work to a new saver after re-login', async () => {
+    const client = api({
+      patchElement: vi.fn(async () => { throw new ApiError(401, 'unauthorized', 'expired'); }),
+    });
+    const saver = new BoardSaver(client, callbacks(), () => Promise.resolve());
+    saver.setRevision('e1', 2);
+    saver.patch('e1', { x: 7, content: { body: 'draft' } }, true);
+    await tick();
+    await tick();
+    const pending = saver.pendingSnapshot();
+    expect(pending.get('e1')).toEqual({ patch: { x: 7, content: { body: 'draft' } } });
+
+    const fresh = api();
+    const resumed = new BoardSaver(fresh, callbacks(), () => Promise.resolve());
+    resumed.setRevision('e1', 2);
+    for (const [id, work] of pending) {
+      resumed.patch(id, work.patch);
+      resumed.flush(id);
+    }
+    await tick();
+    await tick();
+    expect(fresh.patchElement).toHaveBeenCalledWith('e1', expect.objectContaining({ expectedRevision: 2, x: 7 }));
   });
 
   it('reports session expiry without retrying', async () => {

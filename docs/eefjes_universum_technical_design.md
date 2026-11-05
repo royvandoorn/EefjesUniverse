@@ -1,7 +1,7 @@
 # Eefje's universum — Technical Design
 
 **Version:** 1.0  
-**Status:** Phases 1–4 implemented; PC/phone testing reported, latest photo controls awaiting final phone recheck; phase 5 additions and release gates tracked below
+**Status:** Phases 1–5 implemented; PC/phone testing reported for phases 1–4; phase 5 additions (text elements, drafts, session recovery) await phone verification; release gates tracked below
 
 **Date:** 5 November 2026
 
@@ -340,11 +340,11 @@ Phase 4 content implementation is complete. Implemented: note/list editing and p
 
 Verification: 81 automated tests, typecheck and production build pass. The user reported PC and phone testing. Recheck the latest photo-size and full-screen controls on the actual phone; do not treat this as already verified or as evidence of hosted production behaviour.
 
-Explicit phase 5 carry-over:
-- Standalone text/section headings and the one-time central “Eefje's universum” element (section 9.1; PRD TEXT-01–05).
-- Personal styling and a wider note/list font-size range.
-- IndexedDB drafts, failed-save handling and optional "Find content" navigation.
-- Distinguish permission/origin/CSRF failures from real session expiry; preserve and resume draft/save-queue state correctly across re-login, with regression and manual recovery checks. These remain outstanding, not completed phase 4 verification claims.
+Explicit phase 5 carry-over — now implemented, awaiting phone verification:
+- Standalone text/section headings and the one-time central “Eefje's universum” element (section 9.1; PRD TEXT-01–05): `text` element type with body/font size/colour/alignment, seeded centrally by migration 0004.
+- Personal styling (paper-dot board surface, serif display text) and a wider note/list font-size range (S/M/L/XL).
+- IndexedDB drafts for unconfirmed changes with restore-and-retry on reload and explicit retry/discard for drafts whose card no longer exists.
+- 401 session expiry is now distinguished from 403 permission/origin/CSRF denial, and the pending save queue is carried across re-login. "Find content" navigation remains deferred until mobile testing shows it is needed. Manual recovery checks on the real phone remain outstanding.
 
 Before production release, confirm remaining viewer, failure/retry and session-recovery acceptance cases, real-photo upload through hosted Vercel/Supabase, hosted privacy controls, backups and a restore. Local automated tests and reported phone use do not replace those checks.
 

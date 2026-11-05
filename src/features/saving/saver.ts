@@ -9,6 +9,10 @@ export interface SaverCallbacks {
   onStatus(elementId: string, state: SaveState): void;
   onConflict(elementId: string, element?: BoardElement): void;
   onSessionExpired(): void;
+  /** 403: denied by role/origin/CSRF — not a session expiry. */
+  onForbidden?(): void;
+  /** Mirror of unconfirmed work for IndexedDB drafts; null once acknowledged. */
+  onDraftChanged?(elementId: string, draft: { patch: Record<string, unknown>; items?: ItemInput[] } | null): void;
 }
 
 type ItemInput = { text: string; completed: boolean };
@@ -69,11 +73,33 @@ export class BoardSaver {
     return !!entry && (entry.sending || Object.keys(entry.pending).length > 0 || !!entry.pendingItems);
   }
 
+  private draftChanged(id: string, entry: Entry) {
+    this.callbacks.onDraftChanged?.(id, {
+      patch: { ...entry.pending },
+      ...(entry.pendingItems ? { items: entry.pendingItems.map(item => ({ ...item })) } : {}),
+    });
+  }
+
+  /** Copy of all unconfirmed work, e.g. to carry the queue into a new saver after re-login. */
+  pendingSnapshot(): Map<string, { patch: Record<string, unknown>; items?: ItemInput[] }> {
+    const pending = new Map<string, { patch: Record<string, unknown>; items?: ItemInput[] }>();
+    for (const [id, entry] of this.entries) {
+      if (Object.keys(entry.pending).length > 0 || entry.pendingItems) {
+        pending.set(id, {
+          patch: { ...entry.pending },
+          ...(entry.pendingItems ? { items: entry.pendingItems.map(item => ({ ...item })) } : {}),
+        });
+      }
+    }
+    return pending;
+  }
+
   /** Queue content/layout fields; flushed after a short debounce or on demand. */
   patch(id: string, fields: Record<string, unknown>, immediate = false) {
     const entry = this.entry(id);
     Object.assign(entry.pending, fields);
     this.callbacks.onStatus(id, 'dirty');
+    this.draftChanged(id, entry);
     if (entry.timer) clearTimeout(entry.timer);
     if (immediate) void this.pump(id);
     else entry.timer = setTimeout(() => void this.pump(id), DEBOUNCE_MS);
@@ -84,6 +110,7 @@ export class BoardSaver {
     const entry = this.entry(id);
     entry.pendingItems = items;
     this.callbacks.onStatus(id, 'dirty');
+    this.draftChanged(id, entry);
     if (entry.timer) clearTimeout(entry.timer);
     if (immediate) void this.pump(id);
     else entry.timer = setTimeout(() => void this.pump(id), DEBOUNCE_MS);
@@ -109,6 +136,7 @@ export class BoardSaver {
     const entry = this.entries.get(id);
     if (entry?.timer) clearTimeout(entry.timer);
     this.entries.delete(id);
+    this.callbacks.onDraftChanged?.(id, null);
   }
 
   private async pump(id: string) {
@@ -148,14 +176,24 @@ export class BoardSaver {
           if (error instanceof ApiError && error.status === 409) {
             entry.pending = {};
             entry.pendingItems = undefined;
+            this.callbacks.onDraftChanged?.(id, null);
             this.callbacks.onStatus(id, 'conflict');
             this.callbacks.onConflict(id, (error.details as { element?: BoardElement } | undefined)?.element);
             stop = true;
             continue;
           }
-          if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          if (error instanceof ApiError && error.status === 401) {
+            // Genuine session expiry: keep the work and offer re-login.
             this.callbacks.onStatus(id, 'failed');
             this.callbacks.onSessionExpired();
+            stop = true;
+            continue;
+          }
+          if (error instanceof ApiError && error.status === 403) {
+            // Role/origin/CSRF denial is not session expiry: the session may
+            // still be valid, so surface it separately and keep the work.
+            this.callbacks.onStatus(id, 'failed');
+            this.callbacks.onForbidden?.();
             stop = true;
             continue;
           }
@@ -175,7 +213,10 @@ export class BoardSaver {
           await this.sleep(Math.min(8000, 500 * 2 ** entry.attempts) * (0.5 + Math.random() * 0.5));
         }
       }
-      if (!stop) this.callbacks.onStatus(id, 'saved');
+      if (!stop) {
+        this.callbacks.onStatus(id, 'saved');
+        this.callbacks.onDraftChanged?.(id, null);
+      }
     } finally {
       entry.sending = false;
       if (!stop && (Object.keys(entry.pending).length > 0 || entry.pendingItems)) void this.pump(id);

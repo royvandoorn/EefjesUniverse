@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { BoardElement, ListItem, NoteContent, ListContent, ImageContent } from '../../shared/board.ts';
-import { NOTE_BODY_MAX, TITLE_MAX, CAPTION_MAX, ITEM_TEXT_MAX, MAX_LIST_ITEMS, imageCardSize } from '../../shared/board.ts';
-import { NOTE_COLOUR_KEYS } from './ElementCard.tsx';
+import type { BoardElement, ListItem, NoteContent, ListContent, ImageContent, TextContent, TextAlignment, TextFont } from '../../shared/board.ts';
+import { NOTE_BODY_MAX, TITLE_MAX, CAPTION_MAX, ITEM_TEXT_MAX, MAX_LIST_ITEMS, imageCardSize, FONT_SIZE_OPTIONS, COLOUR_KEYS, textFontSchema } from '../../shared/board.ts';
+import { COLOUR_SWATCHES, fontSizePx } from './ElementCard.tsx';
 import { PhotoUpload } from './PhotoUpload.tsx';
 import type { UploadedImage } from './api.ts';
 
@@ -40,13 +40,14 @@ export function CardEditor({ element, items, onPatchContent, onReplaceItems, onC
       aria-label={`Edit ${element.type}`}
     >
       <div className="flex items-center justify-between border-b border-neutral-200 p-3">
-        <h2 className="font-semibold">Edit {element.type === 'note' ? 'note' : element.type === 'list' ? 'list' : 'photo'}</h2>
+        <h2 className="font-semibold">Edit {element.type === 'note' ? 'note' : element.type === 'list' ? 'list' : element.type === 'text' ? 'text' : 'photo'}</h2>
         <button type="button" className="min-h-11 min-w-11 rounded bg-neutral-800 px-4 text-white" onClick={onClose} disabled={uploadBusy}>
           {element.type === 'image' ? 'Close' : 'Done'}
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {element.type === 'note' && <NoteFields element={element} onPatchContent={onPatchContent} />}
+        {element.type === 'text' && <TextFields element={element} onPatchContent={onPatchContent} />}
         {element.type === 'list' && (
           <ListFields element={element} items={items} onPatchContent={onPatchContent} onReplaceItems={onReplaceItems} />
         )}
@@ -92,73 +93,156 @@ function NoteFields({ element, onPatchContent }: { element: BoardElement; onPatc
         />
       </label>
       <ColourSwatches selected={content.colourKey} onSelect={key => onPatchContent({ ...content, colourKey: key })} />
-      <SizePicker
+      <FontSizeSelect
         label="Title size"
-        value={content.titleSize}
+        value={fontSizePx(content.titleSize, 'title', 16)}
         onSelect={size => onPatchContent({ ...content, titleSize: size })}
       />
-      <SizePicker
+      <FontSizeSelect
         label="Text size"
-        value={content.bodySize}
+        value={fontSizePx(content.bodySize, 'body', 14)}
         onSelect={size => onPatchContent({ ...content, bodySize: size })}
+      />
+      <FontSelect
+        value={content.font}
+        onSelect={font => onPatchContent({ ...content, font })}
       />
     </div>
   );
 }
 
-const TEXT_SIZES = ['small', 'medium', 'large'] as const;
-
-function SizePicker({ label, value, onSelect }: {
+/** Word-style point-size dropdown. */
+function FontSizeSelect({ label, value, onSelect }: {
   label: string;
-  value: string | undefined;
-  onSelect(size: (typeof TEXT_SIZES)[number]): void;
+  value: number;
+  onSelect(size: number): void;
 }) {
   return (
+    <label className="flex items-center gap-2 text-sm">
+      {label}
+      <select
+        className="min-h-11 rounded border border-neutral-300 bg-white px-2"
+        value={value}
+        onChange={event => onSelect(Number(event.target.value))}
+      >
+        {!FONT_SIZE_OPTIONS.includes(value as (typeof FONT_SIZE_OPTIONS)[number]) && (
+          <option value={value}>{value}</option>
+        )}
+        {FONT_SIZE_OPTIONS.map(size => (
+          <option key={size} value={size}>{size}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Shared palette across notes, lists and text elements. */
+function ColourSwatches({ selected, onSelect, keys }: { selected: string | undefined; onSelect(key: string): void; keys?: readonly string[] }) {
+  return (
     <fieldset className="text-sm">
-      <legend className="mb-1">{label}</legend>
-      <div className="flex gap-1" role="group" aria-label={label}>
-        {TEXT_SIZES.map(size => (
+      <legend className="mb-1">Colour</legend>
+      <div className="flex flex-wrap gap-2">
+        {(keys ?? COLOUR_KEYS).map(key => (
           <button
-            key={size}
+            key={key}
             type="button"
-            aria-pressed={(value ?? 'medium') === size}
-            className={`min-h-11 rounded border px-4 capitalize ${(value ?? 'medium') === size ? 'border-neutral-800 bg-neutral-100' : 'border-neutral-300'}`}
-            onClick={() => onSelect(size)}
-          >
-            {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
-          </button>
+            aria-label={`Colour ${key}`}
+            aria-pressed={selected === key}
+            className={`h-11 w-11 rounded-full border-2 ${key === 'rainbow' ? '' : (COLOUR_SWATCHES[key] ?? 'bg-neutral-100')} ${selected === key ? 'border-neutral-800 ring-2 ring-neutral-300' : 'border-neutral-300'}`}
+            style={key === 'rainbow' ? { background: 'conic-gradient(#f43f5e, #f59e0b, #eab308, #10b981, #0ea5e9, #8b5cf6, #d946ef, #f43f5e)' } : undefined}
+            onClick={() => onSelect(key)}
+          />
         ))}
       </div>
     </fieldset>
   );
 }
 
-const SWATCH_CLASSES: Record<string, string> = {
-  paper: 'bg-amber-50',
-  white: 'bg-white',
-  rose: 'bg-rose-100',
-  sky: 'bg-sky-100',
-  mint: 'bg-emerald-100',
-  lilac: 'bg-violet-100',
+const FONT_LABELS: Record<TextFont, string> = {
+  hand: 'Handwritten',
+  script: 'Script',
+  serif: 'Serif',
+  elegant: 'Elegant',
+  sans: 'Sans',
+  round: 'Rounded',
+  mono: 'Typewriter',
+  black: 'Bold display',
+  marker: 'Marker',
+  papyrus: 'Papyrus',
 };
 
-function ColourSwatches({ selected, onSelect }: { selected: string | undefined; onSelect(key: string): void }) {
+/** Shared font dropdown for all element types. */
+function FontSelect({ label = 'Font', value, onSelect }: {
+  label?: string;
+  value: TextFont | undefined;
+  onSelect(font: TextFont): void;
+}) {
   return (
-    <fieldset className="text-sm">
-      <legend className="mb-1">Colour</legend>
-      <div className="flex gap-2">
-        {NOTE_COLOUR_KEYS.map(key => (
-          <button
-            key={key}
-            type="button"
-            aria-label={`Colour ${key}`}
-            aria-pressed={selected === key}
-            className={`h-11 w-11 rounded-full border-2 ${SWATCH_CLASSES[key] ?? 'bg-neutral-100'} ${selected === key ? 'border-neutral-800' : 'border-neutral-300'}`}
-            onClick={() => onSelect(key)}
-          />
+    <label className="flex items-center gap-2 text-sm">
+      {label}
+      <select
+        className="min-h-11 rounded border border-neutral-300 bg-white px-2"
+        value={value ?? 'sans'}
+        onChange={event => onSelect(event.target.value as TextFont)}
+      >
+        {textFontSchema.options.map(font => (
+          <option key={font} value={font}>{FONT_LABELS[font]}</option>
         ))}
-      </div>
-    </fieldset>
+      </select>
+    </label>
+  );
+}
+
+const ALIGNMENTS: { key: TextAlignment; label: string }[] = [
+  { key: 'left', label: 'Left' },
+  { key: 'center', label: 'Centre' },
+  { key: 'right', label: 'Right' },
+];
+
+function TextFields({ element, onPatchContent }: { element: BoardElement; onPatchContent: Props['onPatchContent'] }) {
+  const content = element.content as TextContent;
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1 text-sm">
+        Text
+        <textarea
+          className="min-h-24 rounded border border-neutral-300 p-2 font-serif text-xl"
+          maxLength={NOTE_BODY_MAX}
+          defaultValue={content.body}
+          onChange={event => onPatchContent({ ...content, body: event.target.value })}
+        />
+      </label>
+      <FontSizeSelect
+        label="Text size"
+        value={fontSizePx(content.fontSize, 'heading', 60)}
+        onSelect={size => onPatchContent({ ...content, fontSize: size })}
+      />
+      <FontSelect
+        value={content.font}
+        onSelect={font => onPatchContent({ ...content, font })}
+      />
+      <ColourSwatches
+        keys={[...COLOUR_KEYS, 'rainbow']}
+        selected={content.colourKey}
+        onSelect={key => onPatchContent({ ...content, colourKey: key })}
+      />
+      <fieldset className="text-sm">
+        <legend className="mb-1">Alignment</legend>
+        <div className="flex gap-1" role="group" aria-label="Alignment">
+          {ALIGNMENTS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={(content.alignment ?? 'left') === key}
+              className={`min-h-11 rounded border px-4 ${(content.alignment ?? 'left') === key ? 'border-neutral-800 bg-neutral-100' : 'border-neutral-300'}`}
+              onClick={() => onPatchContent({ ...content, alignment: key })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+    </div>
   );
 }
 
@@ -246,15 +330,19 @@ function ListFields({ element, items, onPatchContent, onReplaceItems }: {
         selected={content.colourKey}
         onSelect={key => onPatchContent({ ...content, colourKey: key })}
       />
-      <SizePicker
+      <FontSizeSelect
         label="Title size"
-        value={content.titleSize}
+        value={fontSizePx(content.titleSize, 'title', 16)}
         onSelect={size => onPatchContent({ ...content, titleSize: size })}
       />
-      <SizePicker
+      <FontSizeSelect
         label="Item size"
-        value={content.itemSize}
+        value={fontSizePx(content.itemSize, 'body', 14)}
         onSelect={size => onPatchContent({ ...content, itemSize: size })}
+      />
+      <FontSelect
+        value={content.font}
+        onSelect={font => onPatchContent({ ...content, font })}
       />
     </div>
   );
@@ -263,14 +351,26 @@ function ListFields({ element, items, onPatchContent, onReplaceItems }: {
 function ImageFields({ element, onPatchContent }: { element: BoardElement; onPatchContent: Props['onPatchContent'] }) {
   const content = element.content as ImageContent;
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      Caption (optional)
-      <input
-        className="rounded border border-neutral-300 p-2"
-        maxLength={CAPTION_MAX}
-        defaultValue={content.caption ?? ''}
-        onChange={event => onPatchContent({ ...content, caption: event.target.value || undefined })}
+    <div className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1 text-sm">
+        Caption (optional)
+        <input
+          className="rounded border border-neutral-300 p-2"
+          maxLength={CAPTION_MAX}
+          defaultValue={content.caption ?? ''}
+          onChange={event => onPatchContent({ ...content, caption: event.target.value || undefined })}
+        />
+      </label>
+      <FontSizeSelect
+        label="Caption size"
+        value={fontSizePx(content.captionSize, 'body', 14)}
+        onSelect={size => onPatchContent({ ...content, captionSize: size })}
       />
-    </label>
+      <FontSelect
+        label="Caption font"
+        value={content.captionFont}
+        onSelect={font => onPatchContent({ ...content, captionFont: font })}
+      />
+    </div>
   );
 }
